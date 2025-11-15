@@ -3,8 +3,8 @@ import time
 import numpy as np
 from PIL import Image
 
-# 1. 'raylib' 라이브러리를 rl 이라는 이름으로 import 합니다.
-import raylib as rl
+# ★★★ 핵심 1: 'raylib' 라이브러리의 올바른 import 방식입니다. ★★★
+from raylib import *
 
 import adafruit_blinka_raspberry_pi5_piomatter as piomatter
 from adafruit_blinka_raspberry_pi5_piomatter.pixelmappers import simple_multilane_mapper
@@ -36,26 +36,24 @@ geometry = piomatter.Geometry(width=width, height=height, n_addr_lines=n_addr_li
 framebuffer = np.zeros(shape=(height, width, 3), dtype=np.uint8)
 matrix = piomatter.PioMatter(colorspace=piomatter.Colorspace.RGB888Packed, pinout=piomatter.Pinout.Active3, framebuffer=framebuffer, geometry=geometry)
 
-# --- Raylib 초기화 및 설정 ('raylib' 문법에 맞게 수정) ---
-# ★★★ 핵심 1: SetConfigFlags 함수는 rl.set_config_flags로 호출합니다. ★★★
-rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIDDEN)
-rl.init_window(width, height, "Raylib Offscreen Canvas")
-rl.set_target_fps(60)
+# ★★★ 핵심 2: 모든 Raylib 함수/상수/클래스에서 'rl.' 접두사를 제거했습니다. ★★★
+# --- Raylib 초기화 및 설정 ('raylib'의 표준 문법) ---
+set_config_flags(FLAG_WINDOW_HIDDEN)  # ConfigFlags. 가 아닌 FLAG_ 로 시작하는 상수를 바로 사용
+init_window(width, height, "Raylib Offscreen Canvas")
+set_target_fps(60)
 
 # 공의 상태를 저장할 변수
-# Vector2는 rl.Vector2 로 접근해야 합니다.
-ball_position = rl.Vector2(float(width) / 2, float(height) / 2)
-ball_speed = rl.Vector2(4.0, 3.0)
+ball_position = Vector2(float(width) / 2, float(height) / 2)
+ball_speed = Vector2(4.0, 3.0)
 ball_radius = 10
-# 색상도 rl.GOLD 처럼 접근해야 합니다.
-ball_color = rl.GOLD
+ball_color = GOLD # rl.GOLD가 아닌 GOLD를 바로 사용
 
 print(f"Starting Raylib animation on {width}x{height} matrix.")
-print("Press Ctrl-C to exit.")
+print("Press ESC or close the (hidden) window to exit.")
 
 # --- 메인 루프 ---
 try:
-    while not rl.window_should_close():
+    while not window_should_close():
         # --- 1. 로직 업데이트 ---
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
@@ -65,25 +63,23 @@ try:
         if ball_position.y >= (height - ball_radius) or ball_position.y <= ball_radius:
             ball_speed.y *= -1.0
 
-        # --- 2. Raylib으로 그림 그리기 (모든 함수 앞에 rl. 추가) ---
-        rl.begin_drawing()
-        rl.clear_background(rl.BLACK)
-        rl.draw_circle_v(ball_position, float(ball_radius), ball_color)
-        rl.draw_fps(10, 10)
-        rl.end_drawing()
+        # --- 2. Raylib으로 그림 그리기 (접두사 없음) ---
+        begin_drawing()
+        clear_background(BLACK)
+        draw_circle_v(ball_position, float(ball_radius), ball_color)
+        draw_fps(10, 10)
+        end_drawing()
 
         # --- 3. Raylib 창을 이미지 데이터로 가져오기 ---
-        raylib_image = rl.load_image_from_screen()
+        raylib_image = load_image_from_screen()
         
-        # ★★★ 핵심 2: 'raylib' 패키지에서는 이미지 데이터를 이렇게 가져옵니다. ★★★
-        # ctypes 포인터인 image.data를 바로 Pillow로 넘깁니다.
         pil_image = Image.frombytes(
-            "RGBA", # LoadImageFromScreen은 항상 RGBA 형식을 반환합니다.
+            "RGBA", 
             (raylib_image.width, raylib_image.height),
             raylib_image.data
-        ).convert("RGB") # LED 매트릭스에 맞는 RGB 형식으로 최종 변환합니다.
+        ).convert("RGB")
         
-        rl.unload_image(raylib_image)
+        unload_image(raylib_image)
 
         # --- 4. 180도 회전 보정 적용 ---
         final_output = apply_rotation_fix(pil_image, panel_height, num_physical_chains)
@@ -97,4 +93,4 @@ except KeyboardInterrupt:
 
 finally:
     # --- 프로그램 종료 시 정리 ---
-    rl.close_window()
+    close_window()
