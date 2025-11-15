@@ -3,8 +3,8 @@ import time
 import numpy as np
 from PIL import Image
 
-# 'raylib' 라이브러리의 표준 import 방식입니다.
-from raylib import *
+# ★★★ 핵심 1: 이 라이브러리의 공식적이고 유일한 import 방식입니다. ★★★
+from raylib.static import raylib
 
 import adafruit_blinka_raspberry_pi5_piomatter as piomatter
 from adafruit_blinka_raspberry_pi5_piomatter.pixelmappers import simple_multilane_mapper
@@ -37,24 +37,26 @@ framebuffer = np.zeros(shape=(height, width, 3), dtype=np.uint8)
 matrix = piomatter.PioMatter(colorspace=piomatter.Colorspace.RGB888Packed, pinout=piomatter.Pinout.Active3, framebuffer=framebuffer, geometry=geometry)
 
 
-# ★★★★★ 이 부분이 최종 수정의 핵심입니다 ★★★★★
-# --- Raylib 초기화 (존재하지 않는 set_config_flags 함수를 완전히 제거) ---
-init_window(width, height, "Raylib Animation (Source)")
-set_target_fps(60)
+# ★★★ 핵심 2: 모든 함수와 상수는 'raylib.' 접두사와 파스칼 케이스(PascalCase)를 사용합니다. ★★★
+# --- Raylib 초기화 ('raylib-python-cffi'의 정확한 문법) ---
+# 이 라이브러리에는 SetConfigFlags 함수가 존재하며, 이렇게 호출해야 합니다.
+raylib.SetConfigFlags(raylib.FLAG_WINDOW_HIDDEN)
+raylib.InitWindow(width, height, "Raylib Offscreen Canvas")
+raylib.SetTargetFps(60)
 
 # 공의 상태를 저장할 변수
-ball_position = Vector2(float(width) / 2, float(height) / 2)
-ball_speed = Vector2(4.0, 3.0)
+ball_position = raylib.Vector2(float(width) / 2, float(height) / 2)
+ball_speed = raylib.Vector2(4.0, 3.0)
 ball_radius = 10
+ball_color = raylib.GOLD
 
 print(f"Starting Raylib animation on {width}x{height} matrix.")
-print("A small window WILL appear on your desktop. This is the intended behavior for this library.")
-print("Press ESC or close the window to exit.")
+print("The Raylib window should be hidden. Press Ctrl-C to exit.")
 
-# --- 메인 루프 (이전과 동일) ---
+# --- 메인 루프 ---
 try:
-    while not window_should_close():
-        # 로직 업데이트
+    while not raylib.WindowShouldClose():
+        # --- 1. 로직 업데이트 ---
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
 
@@ -63,26 +65,29 @@ try:
         if ball_position.y >= (height - ball_radius) or ball_position.y <= ball_radius:
             ball_speed.y *= -1.0
 
-        # Raylib으로 그리기
-        begin_drawing()
-        clear_background(BLACK)
-        draw_circle_v(ball_position, float(ball_radius), GOLD)
-        draw_fps(10, 10)
-        end_drawing()
+        # --- 2. Raylib으로 그림 그리기 ---
+        raylib.BeginDrawing()
+        raylib.ClearBackground(raylib.BLACK)
+        raylib.DrawCircleV(ball_position, float(ball_radius), ball_color)
+        raylib.DrawFPS(10, 10)
+        raylib.EndDrawing()
 
-        # Raylib 창을 이미지로 가져오기
-        raylib_image = load_image_from_screen()
+        # --- 3. Raylib 창을 이미지 데이터로 가져오기 ---
+        raylib_image = raylib.LoadImageFromScreen()
+        
+        # ★★★ 핵심 3: 이 라이브러리의 이미지 데이터 접근 방식입니다. ★★★
         pil_image = Image.frombytes(
             "RGBA", 
             (raylib_image.width, raylib_image.height),
             raylib_image.data
         ).convert("RGB")
-        unload_image(raylib_image)
+        
+        raylib.UnloadImage(raylib_image)
 
-        # 180도 회전 보정
+        # --- 4. 180도 회전 보정 적용 ---
         final_output = apply_rotation_fix(pil_image, panel_height, num_physical_chains)
 
-        # LED 매트릭스로 전송
+        # --- 5. 최종 이미지를 PioMatter 프레임버퍼로 전송 ---
         framebuffer[:, :] = np.array(final_output)
         matrix.show()
 
@@ -90,5 +95,5 @@ except KeyboardInterrupt:
     print("\nCleaning up and exiting...")
 
 finally:
-    # 프로그램 종료 시 정리
-    close_window()
+    # --- 프로그램 종료 시 정리 ---
+    raylib.CloseWindow()
