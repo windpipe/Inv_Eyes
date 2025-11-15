@@ -4,66 +4,58 @@
 # SPDX-License-Identifier: MIT
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 import adafruit_blinka_raspberry_pi5_piomatter as piomatter
-# VChain 매퍼를 import 합니다. 이것이 올바른 함수입니다.
-from adafruit_blinka_raspberry_pi5_piomatter.pixelmappers import VChain
+# Your library only has this one mapper, so we will use it.
+from adafruit_blinka_raspberry_pi5_piomatter.pixelmappers import simple_multilane_mapper
 
-# --- 하드웨어 구성에 맞게 이 부분을 설정합니다 ---
-# 1. 기본 단위 설정
-panel_width = 64        # 패널 한 개의 가로 픽셀
-panel_height = 32       # 패널 한 개의 세로 픽셀
-n_panels_in_lane = 4    # 한 레인(체인)에 직렬로 연결된 패널 수
-n_lanes = 3             # 사용한 레인(체인)의 수 (세로 줄 수)
-n_addr_lines = 4        # 64x32 패널의 표준 주소 라인 수
+# --- 1. Define physical hardware layout ---
+panel_width = 64
+panel_height = 32
+panels_per_chain = 4
+num_physical_chains = 3
+n_addr_lines = 4
 
-# 2. 전체 디스플레이 크기 계산
-width = panel_width * n_panels_in_lane  # 전체 가로: 64 * 4 = 256
-height = panel_height * n_lanes         # 전체 세로: 32 * 3 = 96
-# --- 설정 끝 ---
+# --- 2. Calculate true display dimensions ---
+width = panel_width * panels_per_chain    # 64 * 4 = 256
+height = panel_height * num_physical_chains # 32 * 3 = 96
 
-# Pillow 라이브러리를 사용해 그림을 그릴 캔버스를 생성합니다.
+# --- 3. The Workaround: "Trick" the mapper ---
+# We calculate the number of "lanes" the simple_multilane_mapper EXPECTS.
+# It assumes lane_height is 16 (2**4), so we need 6 "virtual" lanes to make a 96px total height.
+n_lanes_for_mapper = height // (1 << n_addr_lines)  # 96 // 16 = 6
+
+# --- 4. Pillow 캔버스 생성 ---
 canvas = Image.new('RGB', (width, height), (0, 0, 0))
 draw = ImageDraw.Draw(canvas)
 
-# ★★★★★ 진짜 최종 수정 부분 ★★★★★
-# VChain 함수를 라이브러리가 요구하는 정확한 인자로 호출합니다.
-pixelmap = VChain(
-    width,              # 1. 전체 디스플레이의 가로 크기 (256)
-    height,             # 2. 전체 디스플레이의 세로 크기 (96)
-    n_addr_lines,       # 3. 패널의 주소 라인 수 (4)
-    n_lanes,            # 4. 병렬로 사용되는 레인(채널)의 수 (3)
-    n_panels_in_lane    # 5. 한 레인(채널)에 연결된 패널의 수 (4)
-)
+# ★★★★★ 이 부분이 핵심입니다 ★★★★★
+# We pass the "fake" number of lanes (6) to the mapper so its internal check passes.
+pixelmap = simple_multilane_mapper(width, height, n_addr_lines, n_lanes_for_mapper)
 
-# Geometry와 PioMatter 객체 생성
-geometry = piomatter.Geometry(width=width, height=height, n_addr_lines=n_addr_lines, n_planes=10, n_temporal_planes=4, map=pixelmap, n_lanes=n_lanes)
-framebuffer = np.asarray(canvas) + 0  # 수정 가능한 복사본 생성
+
+# --- 5. PioMatter 객체 설정 ---
+# IMPORTANT: We must also tell Geometry and PioMatter about the "fake" number of lanes.
+# The library will try to drive 6 lanes, but since only 3 are physically wired,
+# the data for the other 3 will go nowhere, which is harmless.
+geometry = piomatter.Geometry(width=width, height=height, n_addr_lines=n_addr_lines, n_planes=10, n_temporal_planes=4, map=pixelmap, n_lanes=n_lanes_for_mapper)
+framebuffer = np.asarray(canvas) + 0
 matrix = piomatter.PioMatter(colorspace=piomatter.Colorspace.RGB888Packed,
                              pinout=piomatter.Pinout.Active3,
                              framebuffer=framebuffer,
                              geometry=geometry)
 
-# --- 이제 256x96 크기의 캔버스에 그림을 그립니다 ---
-# 예시: 화면 전체에 그라데이션 만들기
-for y in range(height):
-    for x in range(width):
-        r = int(x / width * 255)
-        g = int(y / height * 255)
-        b = 128
-        draw.point((x, y), (r, g, b))
-
-# 예시: 화면 중앙에 흰색 텍스트 쓰기
-from PIL import ImageFont
+# --- 6. 디스플레이에 내용 그리기 ---
+draw.rectangle((0, 0, width-1, height-1), outline=(255,0,0))
 try:
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
 except IOError:
     font = ImageFont.load_default()
-draw.text((width/2, height/2), "256 x 96 OK!", font=font, anchor="mm", fill=(255, 255, 255))
+draw.text((width/2, height/2), "WORKAROUND SUCCESS!\n256x96", font=font, anchor="mm", fill=(0, 255, 0), align="center")
 
 
-# 수정한 캔버스 내용을 실제 디스플레이로 보냅니다.
+# --- 7. 화면에 출력 ---
 framebuffer[:] = np.asarray(canvas)
 matrix.show()
 
